@@ -1,0 +1,25 @@
+name: Bug report
+description: Report a parsing or rendering problem
+body:
+  - type: textarea
+    id: input
+    attributes:
+      label: Input text that fails
+      description: Paste the text or JSON you tried (trim to minimal repro if you can)
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser / OS
+      placeholder: e.g. Chrome 126 on Windows, Safari on iOS
+    validations:
+      required: false

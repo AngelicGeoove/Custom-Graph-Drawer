@@ -1,0 +1,1743 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Node Graph Viewer</title>
+    <meta
+      name="description"
+      content="Single-file, zero-dependency web app that draws node graphs from plain text or JSON. Built with assistance from Anthropic's Claude."
+    />
+    <meta name="theme-color" content="#17181a" />
+    <meta property="og:title" content="Node Graph Viewer" />
+    <meta
+      property="og:description"
+      content="Describe a node graph as text and see the wiring drawn out. No build step."
+    />
+    <meta property="og:type" content="website" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23d97706'/%3E%3Ccircle cx='9' cy='16' r='3.5' fill='white'/%3E%3Ccircle cx='23' cy='10' r='3.5' fill='white'/%3E%3Ccircle cx='23' cy='22' r='3.5' fill='white'/%3E%3Cpath d='M12 15l8-4M12 17l8 4' stroke='white' stroke-width='2' fill='none'/%3E%3C/svg%3E"
+    />
+    <!-- Built with assistance from Anthropic's Claude. Author: Angelic Groove. License: MIT. -->
+    <style>
+      :root {
+        --bg: #f4f4f1;
+        --panel: #fff;
+        --text: #1d1d1b;
+        --muted: #6b6b66;
+        --border: #d6d6cf;
+        --node: #fff;
+        --wire: #8b919b;
+        --accent: #d97706;
+        --grid: #d9d9d2;
+        --btn: #ecece6;
+        box-sizing: border-box;
+        padding-top: env(safe-area-inset-top, 0px);
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          --bg: #17181a;
+          --panel: #202226;
+          --text: #e9e9e6;
+          --muted: #9a9a94;
+          --border: #383b41;
+          --node: #262930;
+          --wire: #7d8491;
+          --accent: #f59e0b;
+          --grid: #2a2c31;
+          --btn: #2d3036;
+        }
+      }
+      :root[data-theme="dark"] {
+        --bg: #17181a;
+        --panel: #202226;
+        --text: #e9e9e6;
+        --muted: #9a9a94;
+        --border: #383b41;
+        --node: #262930;
+        --wire: #7d8491;
+        --accent: #f59e0b;
+        --grid: #2a2c31;
+        --btn: #2d3036;
+      }
+      html {
+        scroll-padding-top: env(safe-area-inset-top, 0px);
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font:
+          14px system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+        overflow: hidden;
+      }
+      .app {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+      }
+      .bar {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--border);
+        background: var(--panel);
+      }
+      .bar h1 {
+        font-size: 15px;
+        margin: 0;
+        flex: 1;
+        white-space: nowrap;
+      }
+      button {
+        background: var(--btn);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 7px 11px;
+        font: inherit;
+        cursor: pointer;
+      }
+      button.p {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #111;
+        font-weight: 600;
+      }
+      .tabs {
+        display: flex;
+        gap: 6px;
+      }
+      .tabs button.on {
+        border-color: var(--accent);
+      }
+      .main {
+        flex: 1;
+        min-height: 0;
+        display: grid;
+        grid-template-columns: 1fr;
+      }
+      .pane {
+        min-height: 0;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+      }
+      body[data-tab="input"] #gp {
+        display: none;
+      }
+      body[data-tab="graph"] #ip {
+        display: none;
+      }
+      @media (min-width: 860px) {
+        .main {
+          grid-template-columns: minmax(300px, 36%) 1fr;
+        }
+        body[data-tab] #gp,
+        body[data-tab] #ip {
+          display: flex;
+        }
+        .tabs {
+          display: none;
+        }
+      }
+      textarea {
+        flex: 1;
+        min-height: 0;
+        width: 100%;
+        box-sizing: border-box;
+        resize: none;
+        border: 0;
+        border-right: 1px solid var(--border);
+        background: var(--panel);
+        color: var(--text);
+        padding: 10px;
+        font:
+          16px/1.45 ui-monospace,
+          Menlo,
+          Consolas,
+          monospace;
+        tab-size: 2;
+        outline: 0;
+      }
+      #warn {
+        max-height: 84px;
+        overflow: auto;
+        padding: 6px 10px;
+        font-size: 12px;
+        color: var(--muted);
+        border-top: 1px solid var(--border);
+        background: var(--panel);
+      }
+      #warn b {
+        color: var(--accent);
+      }
+      .tools {
+        position: absolute;
+        right: 8px;
+        top: 8px;
+        display: flex;
+        gap: 6px;
+        z-index: 2;
+      }
+      #info {
+        position: absolute;
+        left: 8px;
+        bottom: 8px;
+        font-size: 12px;
+        font: inherit;
+        font-size: 12px;
+        color: var(--muted);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 4px 10px;
+        cursor: pointer;
+        z-index: 2;
+      }
+      svg {
+        flex: 1;
+        width: 100%;
+        height: 100%;
+        touch-action: none;
+        background-image: radial-gradient(var(--grid) 1px, transparent 1px);
+        background-size: 22px 22px;
+        cursor: grab;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      .wire {
+        fill: none;
+        stroke: var(--wire);
+        stroke-width: 1.8;
+        opacity: 0.9;
+      }
+      .wire.on {
+        stroke: var(--accent);
+        stroke-width: 2.8;
+        opacity: 1;
+      }
+      .dim {
+        opacity: 0.17;
+      }
+      .body {
+        fill: var(--node);
+        stroke: var(--border);
+        stroke-width: 1.2;
+      }
+      .sel .body {
+        stroke: var(--accent);
+        stroke-width: 2.2;
+      }
+      .title {
+        fill: #fff;
+        font:
+          600 12.5px system-ui,
+          sans-serif;
+      }
+      .pl {
+        fill: var(--text);
+        font:
+          11.5px system-ui,
+          sans-serif;
+      }
+      .port {
+        fill: var(--node);
+        stroke: var(--wire);
+        stroke-width: 1.8;
+      }
+      .node {
+        cursor: pointer;
+      }
+      .pr {
+        fill: var(--muted);
+        font:
+          10.5px ui-monospace,
+          Menlo,
+          Consolas,
+          monospace;
+      }
+      .pv {
+        fill: var(--muted);
+      }
+      .tag {
+        fill: #fff;
+        opacity: 0.75;
+        font:
+          600 9px system-ui,
+          sans-serif;
+        letter-spacing: 0.06em;
+      }
+      #params {
+        position: absolute;
+        left: 8px;
+        bottom: 42px;
+        max-width: min(260px, 46%);
+        max-height: 45%;
+        overflow: auto;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 4px 10px;
+        font-size: 12px;
+        z-index: 2;
+      }
+      #params[hidden] {
+        display: none;
+      }
+      #params div {
+        padding: 5px 0;
+        cursor: pointer;
+        border-bottom: 1px solid var(--border);
+      }
+      #params div:last-child {
+        border: 0;
+      }
+      #params i {
+        font-style: normal;
+        color: var(--muted);
+      }
+      #params span {
+        color: var(--muted);
+        float: right;
+        margin-left: 8px;
+      }
+      #params u {
+        display: inline-block;
+        width: 11px;
+        height: 11px;
+        border-radius: 3px;
+        margin-right: 5px;
+        vertical-align: -1px;
+      }
+      .tpl {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--border);
+        background: var(--panel);
+      }
+      .tpl select,
+      .tpl input {
+        font: inherit;
+        color: var(--text);
+        background: var(--btn);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 6px;
+        min-width: 0;
+      }
+      .tpl input {
+        flex: 1;
+        width: 90px;
+      }
+      #modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 9;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+      }
+      #modal[hidden] {
+        display: none;
+      }
+      #modal > div {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 10px;
+        width: min(560px, 100%);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      #modal textarea {
+        flex: none;
+        height: 50vh;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        font-size: 13px;
+      }
+      #insp {
+        position: absolute;
+        right: 8px;
+        bottom: 8px;
+        max-width: min(260px, 46%);
+        max-height: 45%;
+        overflow: auto;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 8px 10px;
+        font-size: 12px;
+        z-index: 2;
+      }
+      #insp[hidden] {
+        display: none;
+      }
+      #insp span {
+        color: var(--muted);
+      }
+      #insp h4 {
+        margin: 8px 0 3px;
+        font-size: 11px;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      #insp i {
+        font-style: normal;
+        color: var(--muted);
+        margin-right: 6px;
+      }
+    </style>
+  </head>
+  <body data-tab="input">
+    <div class="app">
+      <div class="bar">
+        <h1>Node Graph Viewer</h1>
+        <div class="tabs" role="tablist" aria-label="View">
+          <button id="t1" class="on" role="tab" aria-selected="true">Input</button
+          ><button id="t2" role="tab" aria-selected="false">Graph</button>
+        </div>
+        <button id="theme" aria-label="Toggle light/dark theme" title="Toggle theme">◐</button>
+        <button class="p" id="draw">Draw</button>
+      </div>
+      <div class="main">
+        <div class="pane" id="ip">
+          <div class="tpl">
+            <label class="sr" for="tsel" hidden>Template</label>
+            <select id="tsel" aria-label="Node template"></select
+            ><button id="topen">Open file</button
+            ><input
+              id="tfile"
+              type="file"
+              accept=".json,.txt,.text,.md,.ngv,application/json,text/plain"
+              hidden
+            /><button id="tref">Reference</button
+            ><label for="tname" hidden>New template name</label><input
+              id="tname"
+              placeholder="new template name"
+              autocapitalize="off"
+              aria-label="New template name"
+            /><button id="tsave">Save as template</button
+            ><button id="tdel" hidden>Delete</button>
+          </div>
+          <label for="src" hidden>Graph source text</label><textarea
+            id="src"
+            spellcheck="false"
+            autocapitalize="off"
+            autocomplete="off"
+            aria-label="Graph source text"
+            placeholder="# Describe nodes here, then press Draw"
+          ></textarea>
+          <div id="warn" role="status" aria-live="polite"></div>
+        </div>
+        <div class="pane" id="gp">
+          <div class="tools">
+            <button id="fit">Fit</button><button id="lay">Re-layout</button
+            ><button id="ex">Example</button><button id="js">JSON</button>
+          </div>
+          <svg id="svg" role="img" aria-label="Node graph canvas">
+            <g id="vp">
+              <g id="wires"></g>
+              <g id="nodes"></g>
+            </g>
+          </svg>
+          <div id="params" hidden></div>
+          <button id="info" aria-label="Toggle parameter list"></button>
+          <div id="insp" hidden></div>
+        </div>
+      </div>
+    </div>
+    <div id="modal" hidden>
+      <div role="dialog" aria-modal="true" aria-labelledby="mt">
+        <b id="mt"></b><label for="mx" hidden>Reference text</label><textarea id="mx" readonly></textarea
+        ><button id="mc">Close</button>
+      </div>
+    </div>
+    <script>
+      const $ = (s) => document.querySelector(s),
+        svg = $("#svg"),
+        vp = $("#vp"),
+        src = $("#src");
+      const HH = 28,
+        RH = 22,
+        PAD = 8,
+        KEY = "ngv.text.v1";
+      const EXAMPLE = `# Node:        id "Label" {Setting: Value, ...}: In, In=default -> Out
+# Connection:   id.Port -> id.Port
+# Parameter:   param id "Label": type = default {min: 0, max: 1}
+#              (wire one with:  id -> node.Port)
+# Tap a node or parameter to inspect it. The JSON button exports everything as JSON
+# (nodes: id, label, props{}, inputs[name or {name,value}], outputs[]; edges: ["a.Out","b.A"]).
+
+param dmg "Damage Amount": float = 0 {min: 0, max: 1}
+param scale "Noise Scale": float = 3 {min: 0.5, max: 12}
+param tint "Tint Color": color = #e0204a
+param wind "Wind Dir": vector3 = (0, 1, 0)
+time "Time": -> Time
+mix "Lerp": A=white, B, T -> Out
+uv "Screen Position" {Mode: Default}: -> Out
+speed "Multiply": A, B=-0.05 -> Out
+off "Combine": R=0, G -> RG
+add1 "Add": A, B -> Out
+noise "Simple Noise": UV, Scale -> Out
+sub "Subtract": A, B=0.5 -> Out
+mask "Smoothstep": Edge1=0.5, Edge2=0.8, In -> Out
+frag "Fragment" {Surface: Transparent}: Base Color, Alpha=1 ->
+
+time.Time -> speed.A
+speed.Out -> off.G
+off.RG -> add1.B
+uv.Out -> add1.A
+add1.Out -> noise.UV
+noise.Out -> sub.A
+sub.Out -> mask.In
+mask.Out -> mix.T
+tint -> mix.B
+mix.Out -> frag.Base Color
+scale -> noise.Scale
+dmg -> mask.Edge2
+`;
+      let G = { nodes: new Map(), edges: [] },
+        view = { x: 30, y: 30, k: 1 },
+        sel = null,
+        raf = 0;
+
+      function esc(s) {
+        return String(s).replace(
+          /[&<>"]/g,
+          (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c],
+        );
+      }
+      function hash(s) {
+        let h = 7;
+        for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+        return h;
+      }
+      const NODE =
+          /^([^\s.:>"]+)\s*(?:"([^"]*)")?\s*(?:\{([^}]*)\})?\s*:\s*(.*)$/,
+        EDGE = /^([^\s.:>"]+)\.(.+?)\s*->\s*([^\s.:>"]+)\.(.+?)\s*$/;
+      const list = (s) =>
+        (s || "")
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean);
+      const kv = (s) =>
+        list(s).map((x) => {
+          const i = x.indexOf(":");
+          return i < 0
+            ? [x, ""]
+            : [x.slice(0, i).trim(), x.slice(i + 1).trim()];
+        });
+      const PARAM =
+          /^param\s+([^\s.:>"]+)\s*(?:"([^"]*)")?\s*:\s*(\w+)\s*(?:=\s*([^{]*?))?\s*(?:\{([^}]*)\})?\s*$/,
+        EDGE2 = /^([^\s.:>"]+)\s*->\s*([^\s.:>"]+)\.(.+?)\s*$/;
+      const SHORT = /^([^\s.:>"]+)\s+"([^"]*)"\s*(?:\{([^}]*)\})?\s*$/;
+      let TY = new Map(),
+        TYN = "";
+      const TH = {
+        float: 205,
+        int: 175,
+        bool: 335,
+        vector2: 45,
+        vector3: 45,
+        vector4: 45,
+        color: 290,
+        texture: 15,
+        string: 120,
+      };
+      const isHex = (n) =>
+        typeof n.value === "string" &&
+        n.type === "color" &&
+        /^#[0-9a-f]{3,8}$/i.test(n.value.trim());
+      const safeColor = (n) => (isHex(n) ? n.value.trim() : "transparent");
+      const tag = (n) => {
+        if (n.kind !== "param") return "";
+        const sw = isHex(n)
+          ? `<rect x="${n.w - n.type.length * 6.2 - 34}" y="6" width="16" height="16" rx="4" fill="${esc(safeColor(n))}" stroke="#fff" stroke-opacity=".7"/>`
+          : "";
+        return (
+          sw +
+          `<text class="tag" x="${n.w - 10}" y="18" text-anchor="end">${esc(n.type.toUpperCase())}</text>`
+        );
+      };
+      function setPorts(n, arr, s, isIn) {
+        arr.length = 0;
+        list(s).forEach((x) => {
+          const i = x.indexOf("="),
+            nm = (i < 0 ? x : x.slice(0, i)).trim();
+          arr.push(nm);
+          if (i >= 0 && isIn) n.vals[nm] = x.slice(i + 1).trim();
+        });
+      }
+      const ref = (s) => {
+        s = String(s);
+        const i = s.indexOf(".");
+        return i < 0 ? [s, ""] : [s.slice(0, i), s.slice(i + 1)];
+      };
+
+      function parse(txt) {
+        const nodes = new Map(),
+          edges = [],
+          warns = [];
+        const get = (id) => {
+          if (!nodes.has(id))
+            nodes.set(id, {
+              id,
+              label: id,
+              ins: [],
+              outs: [],
+              props: [],
+              vals: {},
+              auto: true,
+            });
+          return nodes.get(id);
+        };
+        const addPort = (n, arr, p) => {
+          if (!arr.includes(p)) {
+            arr.push(p);
+            if (!n.auto) warns.push(`Added undeclared port "${p}" to ${n.id}`);
+          }
+        };
+        const link = (a, ap, b, bp) => {
+          if (!a || !b || !bp) {
+            warns.push("Bad connection: " + [a, ap, b, bp].join(" "));
+            return;
+          }
+          const A = get(a),
+            B = get(b);
+          ap = ap || A.outs[0] || "Out";
+          addPort(A, A.outs, ap);
+          addPort(B, B.ins, bp);
+          edges.push({ a, ap, b, bp });
+        };
+        const applyType = (n, t, label, ps) => {
+          const d = TY.get(t.toLowerCase());
+          n.label = label || t;
+          n.auto = !d;
+          if (!d) {
+            if (TY.size) warns.push(`Unknown node type "${t}" in ${TYN}`);
+            return;
+          }
+          n.cat = d.cat;
+          n.ins = [...d.ins];
+          n.outs = [...d.outs];
+          n.vals = { ...d.vals };
+          n.props = kv(ps);
+        };
+        const t = txt.trim();
+        if (t[0] === "{") {
+          try {
+            const j = JSON.parse(t);
+            (j.nodes || []).forEach((n) => {
+              const o = get(String(n.id));
+              o.auto = false;
+              o.label = String(n.label || n.id);
+              const pn = (a) =>
+                (a || []).map((x) =>
+                  typeof x === "object"
+                    ? (x.value !== undefined &&
+                        (o.vals[x.name] = String(x.value)),
+                      String(x.name))
+                    : String(x),
+                );
+              if (n.type && !n.inputs && !n.outputs)
+                applyType(o, String(n.type), String(n.label || n.type), "");
+              else {
+                o.ins = pn(n.inputs);
+                o.outs = pn(n.outputs);
+              }
+              o.props = Object.entries(n.props || {}).map(([k, v]) => [
+                k,
+                String(v),
+              ]);
+            });
+            (j.parameters || []).forEach((p) => {
+              const o = get(String(p.id || p.name));
+              o.auto = false;
+              o.kind = "param";
+              o.label = String(p.label || p.name || p.id);
+              o.type = String(p.type || "float");
+              o.value =
+                p.value === undefined
+                  ? ""
+                  : typeof p.value === "object"
+                    ? JSON.stringify(p.value)
+                    : String(p.value);
+              o.outs = ["Out"];
+              o.props = [
+                ["type", o.type],
+                ...(o.value ? [["default", o.value]] : []),
+                ...Object.entries(p.props || {}).map(([k, v]) => [
+                  k,
+                  String(v),
+                ]),
+              ];
+              ["min", "max"].forEach((k) => {
+                if (p[k] !== undefined) o.props.push([k, String(p[k])]);
+              });
+            });
+            (j.edges || []).forEach((e) => {
+              const f = Array.isArray(e) ? e[0] : e.from,
+                to = Array.isArray(e) ? e[1] : e.to,
+                [a, ap] = ref(f),
+                [b, bp] = ref(to);
+              link(a, ap, b, bp);
+            });
+          } catch (err) {
+            warns.push("JSON error: " + err.message);
+          }
+        } else {
+          // Comment rule: full-line # or // are skipped. Trailing
+          // " # ..." / " // ..." are stripped only when preceded by
+          // whitespace, so "#e0204a" colors and "https://..." URLs survive.
+          const stripComment = (line) => {
+            const t = line.trim();
+            if (!t || t.startsWith("#") || t.startsWith("//")) return "";
+            return t
+              .replace(/\s+#\s.*$/, "")
+              .replace(/\s+\/\/.*$/, "")
+              .trim();
+          };
+          const lines = txt.split("\n").map(stripComment).filter(Boolean);
+          const rest = [];
+          for (const l of lines) {
+            const pm = l.match(PARAM);
+            if (pm) {
+              const n = get(pm[1]);
+              n.auto = false;
+              n.kind = "param";
+              n.label = pm[2] || pm[1];
+              n.type = pm[3];
+              n.value = (pm[4] || "").trim();
+              n.outs = ["Out"];
+              n.props = [
+                ["type", n.type],
+                ...(n.value ? [["default", n.value]] : []),
+                ...kv(pm[5]),
+              ];
+              continue;
+            }
+            const sm = l.match(SHORT);
+            if (sm) {
+              applyType(get(sm[1]), sm[2], sm[2], sm[3]);
+              continue;
+            }
+            const m = l.match(NODE);
+            if (m) {
+              const n = get(m[1]);
+              n.auto = false;
+              n.label = m[2] || m[1];
+              const rt = m[4].trim();
+              if (!rt.includes("->") && TY.has(rt.toLowerCase()))
+                applyType(n, rt, m[2] || rt, m[3]);
+              else {
+                n.props = kv(m[3]);
+                n.vals = {};
+                const [i, o] = m[4].split("->");
+                setPorts(n, n.ins, i, 1);
+                setPorts(n, n.outs, o, 0);
+              }
+            } else rest.push(l);
+          }
+          for (const l of rest) {
+            const m = l.match(EDGE),
+              s = l.match(EDGE2);
+            if (m) link(m[1], m[2], m[3], m[4]);
+            else if (s) link(s[1], "", s[2], s[3]);
+            else warns.push("Could not read: " + l);
+          }
+        }
+        const cnt = {};
+        edges.forEach((e) => {
+          const k = e.b + "." + e.bp;
+          cnt[k] = (cnt[k] || 0) + 1;
+        });
+        for (const k in cnt)
+          if (cnt[k] > 1) warns.push(`Input ${k} has ${cnt[k]} connections`);
+        nodes.forEach((n) => {
+          if (n.kind === "param" && !edges.some((e) => e.a === n.id))
+            warns.push(`Parameter "${n.label}" is not used`);
+        });
+        return { nodes, edges, warns };
+      }
+
+      function sizeNodes() {
+        for (const n of G.nodes.values()) {
+          const ml = (a) => a.reduce((m, s) => Math.max(m, s.length), 0);
+          const il = n.ins.reduce(
+              (m, s) =>
+                Math.max(
+                  m,
+                  s.length +
+                    (n.vals[s] !== undefined
+                      ? String(n.vals[s]).length + 3
+                      : 0),
+                ),
+              0,
+            ),
+            pl =
+              n.props.reduce(
+                (m, [k, v]) => Math.max(m, k.length + v.length + 2),
+                0,
+              ) * 6.6;
+          n.w = Math.max(
+            140,
+            n.label.length * 8 +
+              28 +
+              (n.kind === "param" ? n.type.length * 7 + 40 : 0),
+            (il + ml(n.outs)) * 7 + 46,
+            pl + 22,
+          );
+          n.py = HH + (n.props.length ? n.props.length * 15 + 8 : 0);
+          n.h = n.py + Math.max(n.ins.length, n.outs.length, 1) * RH + PAD;
+        }
+      }
+
+      function layout() {
+        const ns = [...G.nodes.values()],
+          depth = new Map(ns.map((n) => [n.id, 0]));
+        for (let it = 0; it < ns.length; it++) {
+          let ch = false;
+          for (const e of G.edges) {
+            if (e.a === e.b) continue;
+            const d = depth.get(e.a) + 1;
+            if (d > depth.get(e.b) && d <= ns.length) {
+              depth.set(e.b, d);
+              ch = true;
+            }
+          }
+          if (!ch) break;
+        }
+        const cols = [];
+        ns.forEach((n) => {
+          (cols[depth.get(n.id)] = cols[depth.get(n.id)] || []).push(n);
+        });
+        const rank = new Map(),
+          upd = () =>
+            cols.forEach(
+              (c) =>
+                c &&
+                c.forEach((n, i) => rank.set(n.id, i / Math.max(1, c.length))),
+            );
+        upd();
+        for (let s = 0; s < 4; s++)
+          for (const dir of [1, -1]) {
+            const idx = cols.map((_, i) => i);
+            if (dir < 0) idx.reverse();
+            for (const ci of idx) {
+              const col = cols[ci];
+              if (!col) continue;
+              const key = (n) => {
+                const nb = G.edges
+                  .filter((e) => (dir > 0 ? e.b === n.id : e.a === n.id))
+                  .map((e) => rank.get(dir > 0 ? e.a : e.b));
+                return nb.length
+                  ? nb.reduce((a, b) => a + b, 0) / nb.length
+                  : rank.get(n.id);
+              };
+              const k = new Map(col.map((n) => [n.id, key(n)]));
+              col.sort((a, b) => k.get(a.id) - k.get(b.id));
+              upd();
+            }
+          }
+        let x = 0,
+          hs = [];
+        cols.forEach((c, i) => {
+          if (!c) return;
+          hs[i] = c.reduce((s, n) => s + n.h + 28, -28);
+        });
+        const H = Math.max(0, ...hs.filter(Boolean));
+        cols.forEach((c, i) => {
+          if (!c) return;
+          let y = (H - hs[i]) / 2;
+          const w = Math.max(...c.map((n) => n.w));
+          c.forEach((n) => {
+            n.x = x;
+            n.y = y;
+            y += n.h + 28;
+          });
+          x += w + 90;
+        });
+      }
+
+      function related(id) {
+        if (!id || !G.nodes.has(id)) return null;
+        const walk = (start, up) => {
+          const s = new Set([start]),
+            q = [start];
+          while (q.length) {
+            const c = q.pop();
+            for (const e of G.edges) {
+              const nx = up ? (e.b === c ? e.a : null) : e.a === c ? e.b : null;
+              if (nx && !s.has(nx)) {
+                s.add(nx);
+                q.push(nx);
+              }
+            }
+          }
+          return s;
+        };
+        return { anc: walk(id, true), desc: walk(id, false) };
+      }
+      const pp = (n, out, i) => [
+        n.x + (out ? n.w : 0),
+        n.y + n.py + i * RH + RH / 2,
+      ];
+      let pOpen = false;
+      function renderParams() {
+        const el = $("#params"),
+          ps = [...G.nodes.values()].filter((n) => n.kind === "param");
+        el.hidden = !(pOpen && ps.length);
+        el.innerHTML = ps
+          .map((n) => {
+            const u = G.edges.filter((e) => e.a === n.id).length;
+            return `<div data-p="${esc(n.id)}">${isHex(n) ? `<u style="background:${esc(safeColor(n))}"></u>` : ""}<b>${esc(n.label)}</b> <i>${esc(n.type)}</i> ${esc(n.value)}<span>${u ? "\u00d7" + u : "unused"}</span></div>`;
+          })
+          .join("");
+      }
+      function inspect() {
+        const el = $("#insp"),
+          n = sel && G.nodes.get(sel);
+        if (!n) {
+          el.hidden = true;
+          return;
+        }
+        const into = (p) => {
+          const e = G.edges.find((e) => e.b === n.id && e.bp === p);
+          return e
+            ? `← ${esc(G.nodes.get(e.a).label)}.${esc(e.ap)}`
+            : n.vals[p] !== undefined
+              ? "= " + esc(n.vals[p])
+              : "unconnected";
+        };
+        const outs = (p) => {
+          const t = G.edges
+            .filter((e) => e.a === n.id && e.ap === p)
+            .map((e) => `${esc(G.nodes.get(e.b).label)}.${esc(e.bp)}`);
+          return t.length ? "→ " + t.join(", ") : "unused";
+        };
+        el.innerHTML =
+          `<b>${esc(n.label)}</b> <span>${esc(n.id)}</span>` +
+          (n.props.length
+            ? "<h4>Properties</h4>" +
+              n.props
+                .map(([k, v]) => `<div><i>${esc(k)}</i>${esc(v)}</div>`)
+                .join("")
+            : "") +
+          (n.ins.length
+            ? "<h4>Inputs</h4>" +
+              n.ins.map((p) => `<div><i>${esc(p)}</i>${into(p)}</div>`).join("")
+            : "") +
+          (n.outs.length
+            ? "<h4>Outputs</h4>" +
+              n.outs
+                .map((p) => `<div><i>${esc(p)}</i>${outs(p)}</div>`)
+                .join("")
+            : "");
+        el.hidden = false;
+      }
+
+      function draw() {
+        raf = 0;
+        const r = related(sel);
+        let w = "",
+          nd = "";
+        for (const e of G.edges) {
+          const A = G.nodes.get(e.a),
+            B = G.nodes.get(e.b);
+          const [x1, y1] = pp(A, 1, A.outs.indexOf(e.ap)),
+            [x2, y2] = pp(B, 0, B.ins.indexOf(e.bp)),
+            dx = Math.max(40, Math.abs(x2 - x1) * 0.5);
+          const on =
+            r &&
+            ((r.anc.has(e.a) && r.anc.has(e.b)) ||
+              (r.desc.has(e.a) && r.desc.has(e.b)));
+          w += `<path class="wire${on ? " on" : ""}${r && !on ? " dim" : ""}" d="M${x1} ${y1}C${x1 + dx} ${y1} ${x2 - dx} ${y2} ${x2} ${y2}"/>`;
+        }
+        for (const n of G.nodes.values()) {
+          const dim = r && !r.anc.has(n.id) && !r.desc.has(n.id),
+            hue =
+              n.kind === "param"
+                ? (TH[n.type] ?? hash(n.type) % 360)
+                : n.cat
+                  ? hash(n.cat) % 360
+                  : hash(n.label.replace(/[\d_ ]+$/, "")) % 360;
+          let p = n.props
+            .map(
+              ([k, v], i) =>
+                `<text class="pr" x="10" y="${HH + 14 + i * 15}">${esc(k)}: ${esc(v)}</text>`,
+            )
+            .join("");
+          n.ins.forEach((s, i) => {
+            const y = n.py + i * RH + RH / 2,
+              v =
+                n.vals[s] !== undefined && !G.conn.has(n.id + "." + s)
+                  ? ` <tspan class="pv">= ${esc(n.vals[s])}</tspan>`
+                  : "";
+            p += `<circle class="port" cx="0" cy="${y}" r="4.5"/><text class="pl" x="10" y="${y}" dy=".34em">${esc(s)}${v}</text>`;
+          });
+          n.outs.forEach((s, i) => {
+            const y = n.py + i * RH + RH / 2;
+            p += `<circle class="port" cx="${n.w}" cy="${y}" r="4.5"/><text class="pl" x="${n.w - 10}" y="${y}" dy=".34em" text-anchor="end">${esc(s)}</text>`;
+          });
+          nd += `<g class="node${n.id === sel ? " sel" : ""}${dim ? " dim" : ""}" data-id="${esc(n.id)}" transform="translate(${n.x} ${n.y})"><rect class="body" width="${n.w}" height="${n.h}" rx="8"/><path d="M0 8a8 8 0 0 1 8-8h${n.w - 16}a8 8 0 0 1 8 8v${HH - 8}H0z" fill="hsl(${hue} 42% 40%)"/><text class="title" x="10" y="18">${esc(n.label)}</text>${tag(n)}${p}</g>`;
+        }
+        $("#wires").innerHTML = w;
+        $("#nodes").innerHTML = nd;
+        inspect();
+        vp.setAttribute(
+          "transform",
+          `translate(${view.x} ${view.y}) scale(${view.k})`,
+        );
+      }
+      const redraw = () => {
+        if (!raf) raf = requestAnimationFrame(draw);
+      };
+
+      function fit() {
+        const ns = [...G.nodes.values()];
+        if (!ns.length) return;
+        const r = svg.getBoundingClientRect();
+        if (!r.width) return;
+        const x0 = Math.min(...ns.map((n) => n.x)),
+          y0 = Math.min(...ns.map((n) => n.y)),
+          x1 = Math.max(...ns.map((n) => n.x + n.w)),
+          y1 = Math.max(...ns.map((n) => n.y + n.h));
+        const k = Math.min(
+          r.width / (x1 - x0 + 60),
+          r.height / (y1 - y0 + 60),
+          1.2,
+        );
+        view = {
+          k,
+          x: (r.width - (x1 - x0) * k) / 2 - x0 * k,
+          y: (r.height - (y1 - y0) * k) / 2 - y0 * k,
+        };
+        redraw();
+      }
+
+      function build(relayout) {
+        try {
+          localStorage.setItem(KEY, src.value);
+        } catch (e) {}
+        TY = tplTypes(ACTIVE);
+        TYN = ACTIVE;
+        const old = G.nodes,
+          P = parse(src.value);
+        P.nodes.forEach((n) => {
+          const o = old.get(n.id);
+          if (o && !relayout) {
+            n.x = o.x;
+            n.y = o.y;
+          }
+        });
+        G = {
+          nodes: P.nodes,
+          edges: P.edges,
+          conn: new Set(P.edges.map((e) => e.b + "." + e.bp)),
+        };
+        sizeNodes();
+        const all = [...G.nodes.values()].every((n) => n.x !== undefined);
+        if (relayout || !all) {
+          layout();
+          setTimeout(fit, 0);
+        }
+        if (sel && !G.nodes.has(sel)) sel = null;
+        $("#warn").innerHTML = P.warns.length
+          ? P.warns.map((w) => "<div><b>!</b> " + esc(w) + "</div>").join("")
+          : "Parsed OK.";
+        const np = [...G.nodes.values()].filter(
+          (n) => n.kind === "param",
+        ).length;
+        $("#info").textContent =
+          `${G.nodes.size} nodes · ${G.edges.length} connections` +
+          (np ? ` · ${np} params ▴` : "");
+        renderParams();
+        draw();
+      }
+
+      // ---- interaction
+      const ptrs = new Map();
+      let drag = null;
+      const dist = () => {
+        const a = [...ptrs.values()];
+        return Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y);
+      };
+      const mid = () => {
+        const a = [...ptrs.values()],
+          r = svg.getBoundingClientRect();
+        return [(a[0].x + a[1].x) / 2 - r.left, (a[0].y + a[1].y) / 2 - r.top];
+      };
+      function zoomAt(cx, cy, f) {
+        const nk = Math.min(3, Math.max(0.12, view.k * f)),
+          s = nk / view.k;
+        view.x = cx - (cx - view.x) * s;
+        view.y = cy - (cy - view.y) * s;
+        view.k = nk;
+      }
+      svg.addEventListener("pointerdown", (e) => {
+        svg.setPointerCapture(e.pointerId);
+        ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (ptrs.size === 2) {
+          drag = { t: "pinch", d: dist() };
+          return;
+        }
+        const n = e.target.closest("[data-id]");
+        drag = n
+          ? { t: "node", id: n.dataset.id, moved: 0 }
+          : { t: "pan", moved: 0 };
+      });
+      svg.addEventListener("pointermove", (e) => {
+        const p = ptrs.get(e.pointerId);
+        if (!p || !drag) return;
+        const dx = e.clientX - p.x,
+          dy = e.clientY - p.y;
+        p.x = e.clientX;
+        p.y = e.clientY;
+        if (drag.t === "pinch" && ptrs.size === 2) {
+          const d = dist(),
+            [cx, cy] = mid();
+          zoomAt(cx, cy, d / drag.d);
+          drag.d = d;
+        } else if (drag.t === "node") {
+          drag.moved += Math.abs(dx) + Math.abs(dy);
+          const n = G.nodes.get(drag.id);
+          if (n && drag.moved > 4) {
+            n.x += dx / view.k;
+            n.y += dy / view.k;
+          }
+        } else if (drag.t === "pan") {
+          drag.moved += Math.abs(dx) + Math.abs(dy);
+          view.x += dx;
+          view.y += dy;
+        }
+        redraw();
+      });
+      const up = (e) => {
+        ptrs.delete(e.pointerId);
+        if (drag && drag.t !== "pinch" && drag.moved <= 4) {
+          sel = drag.t === "node" && drag.id !== sel ? drag.id : null;
+          redraw();
+        }
+        if (ptrs.size === 0) drag = null;
+        else if (ptrs.size === 1) drag = { t: "pan", moved: 99 };
+      };
+      svg.addEventListener("pointerup", up);
+      svg.addEventListener("pointercancel", up);
+      svg.addEventListener(
+        "wheel",
+        (e) => {
+          e.preventDefault();
+          const r = svg.getBoundingClientRect();
+          zoomAt(
+            e.clientX - r.left,
+            e.clientY - r.top,
+            e.deltaY < 0 ? 1.12 : 1 / 1.12,
+          );
+          redraw();
+        },
+        { passive: false },
+      );
+
+      // ---- ui
+      const tab = (t) => {
+        document.body.dataset.tab = t;
+        $("#t1").classList.toggle("on", t === "input");
+        $("#t2").classList.toggle("on", t === "graph");
+        $("#t1").setAttribute("aria-selected", t === "input");
+        $("#t2").setAttribute("aria-selected", t === "graph");
+        if (t === "graph") setTimeout(() => fit(), 0);
+      };
+      $("#t1").onclick = () => tab("input");
+      $("#t2").onclick = () => tab("graph");
+      // Theme: follow OS by default, manual toggle overrides via data-theme.
+      // 2-state toggle based on *effective* theme, so it always flips in 1 press.
+      const isEffectiveDark = () =>
+        document.documentElement.dataset.theme === "dark" ||
+        (document.documentElement.dataset.theme !== "light" &&
+          matchMedia("(prefers-color-scheme: dark)").matches);
+      try {
+        const saved = localStorage.getItem("ngv.theme.v1");
+        if (saved === "light" || saved === "dark")
+          document.documentElement.dataset.theme = saved;
+      } catch (e) {}
+      $("#theme").onclick = () => {
+        const r = document.documentElement;
+        r.dataset.theme = isEffectiveDark() ? "light" : "dark";
+        try {
+          localStorage.setItem("ngv.theme.v1", r.dataset.theme);
+        } catch (e) {}
+      };
+      // Modal: close button + Esc + backdrop click.
+      const closeModal = () => {
+        $("#modal").hidden = true;
+      };
+      $("#draw").onclick = () => {
+        build(false);
+        if (innerWidth < 860) tab("graph");
+      };
+      $("#fit").onclick = fit;
+      $("#info").onclick = () => {
+        pOpen = !pOpen;
+        renderParams();
+      };
+      $("#params").onclick = (e) => {
+        const d = e.target.closest("[data-p]"),
+          n = d && G.nodes.get(d.dataset.p);
+        if (!n) return;
+        sel = n.id;
+        const r = svg.getBoundingClientRect();
+        view.x = r.width / 2 - (n.x + n.w / 2) * view.k;
+        view.y = r.height / 2 - (n.y + n.h / 2) * view.k;
+        redraw();
+      };
+      $("#lay").onclick = () => build(true);
+      $("#ex").onclick = () => {
+        src.value = EXAMPLE;
+        build(true);
+      };
+      $("#js").onclick = () => {
+        const j = {
+          nodes: [...G.nodes.values()]
+            .filter((n) => n.kind !== "param")
+            .map((n) => ({
+              id: n.id,
+              label: n.label,
+              ...(n.props.length ? { props: Object.fromEntries(n.props) } : {}),
+              inputs: n.ins.map((p) =>
+                n.vals[p] !== undefined ? { name: p, value: n.vals[p] } : p,
+              ),
+              outputs: n.outs,
+            })),
+          parameters: [...G.nodes.values()]
+            .filter((n) => n.kind === "param")
+            .map((n) => ({
+              id: n.id,
+              label: n.label,
+              type: n.type,
+              value: n.value,
+              props: Object.fromEntries(
+                n.props.filter(([k]) => k !== "type" && k !== "default"),
+              ),
+            })),
+          edges: G.edges.map((e) => [e.a + "." + e.ap, e.b + "." + e.bp]),
+        };
+        src.value = JSON.stringify(j, null, 1);
+        build(false);
+        if (innerWidth < 860) tab("input");
+      };
+      let tm;
+      src.addEventListener("input", () => {
+        clearTimeout(tm);
+        tm = setTimeout(() => build(false), 450);
+      });
+      // Drag-and-drop onto textarea: load first dropped text/JSON file.
+      const loadFileText = async (f) => {
+        if (!f) return;
+        try {
+          src.value = await f.text();
+          build(true);
+        } catch (err) {
+          $("#warn").innerHTML =
+            "<div><b>!</b> Could not read file: " + esc(err.message) + "</div>";
+        }
+      };
+      ["dragenter", "dragover"].forEach((ev) =>
+        src.addEventListener(ev, (e) => {
+          e.preventDefault();
+          src.style.outline = "2px dashed var(--accent)";
+        }),
+      );
+      ["dragleave", "dragend"].forEach((ev) =>
+        src.addEventListener(ev, () => {
+          src.style.outline = "";
+        }),
+      );
+      src.addEventListener("drop", (e) => {
+        e.preventDefault();
+        src.style.outline = "";
+        const f = e.dataTransfer && e.dataTransfer.files[0];
+        if (f) loadFileText(f);
+      });
+      addEventListener("resize", () => redraw());
+      const BUILTIN = {
+        "Unity Shader Graph": `## Input
+Float: -> Out
+Vector2: X, Y -> Out
+Vector3: X, Y, Z -> Out
+Vector4: X, Y, Z, W -> Out
+Color: -> Out
+Time: -> Time, Sine Time, Cosine Time, Delta Time, Smooth Delta
+UV: -> Out
+Position: -> Out
+Normal Vector: -> Out
+View Direction: -> Out
+Screen Position: -> Out
+Vertex Color: -> Out
+Screen: -> Width, Height
+## Math
+Add: A, B -> Out
+Subtract: A, B -> Out
+Multiply: A, B -> Out
+Divide: A, B -> Out
+Power: A, B -> Out
+Modulo: A, B -> Out
+Maximum: A, B -> Out
+Minimum: A, B -> Out
+Square Root: In -> Out
+Absolute: In -> Out
+Negate: In -> Out
+One Minus: In -> Out
+Saturate: In -> Out
+Floor: In -> Out
+Ceiling: In -> Out
+Round: In -> Out
+Fraction: In -> Out
+Reciprocal: In -> Out
+Clamp: In, Min, Max -> Out
+Lerp: A, B, T -> Out
+Smoothstep: Edge1, Edge2, In -> Out
+Step: Edge, In -> Out
+Remap: In, In Min Max, Out Min Max -> Out
+Sine: In -> Out
+Cosine: In -> Out
+Tangent: In -> Out
+## Vector
+Normalize: In -> Out
+Length: In -> Out
+Distance: A, B -> Out
+Dot Product: A, B -> Out
+Cross Product: A, B -> Out
+Reflection: In, Normal -> Out
+Fresnel Effect: Normal, View Dir, Power -> Out
+Transform: In -> Out
+Split: In -> R, G, B, A
+Combine: R, G, B, A -> RGBA, RGB, RG
+Swizzle: In -> Out
+## Artistic
+Saturation: In, Saturation -> Out
+Hue: In, Offset -> Out
+Contrast: In, Contrast -> Out
+Blend: Base, Blend, Opacity -> Out
+Invert Colors: In -> Out
+Posterize: In, Steps -> Out
+## Procedural
+Simple Noise: UV, Scale -> Out
+Gradient Noise: UV, Scale -> Out
+Voronoi: UV, Angle Offset, Cell Density -> Out, Cells
+Checkerboard: UV, Color A, Color B, Frequency -> Out
+Ellipse: UV, Width, Height -> Out
+Rectangle: UV, Width, Height -> Out
+Polygon: UV, Sides, Width, Height -> Out
+## UV
+Tiling And Offset: UV, Tiling, Offset -> Out
+Rotate: UV, Center, Rotation -> Out
+Twirl: UV, Center, Strength, Offset -> Out
+Polar Coordinates: UV, Center, Radial Scale, Length Scale -> Out
+Spherize: UV, Center, Strength, Offset -> Out
+Flipbook: UV, Width, Height, Tile -> Out
+## Texture and Buffers
+Sample Texture 2D: Texture, UV, Sampler -> RGBA, R, G, B, A
+Normal From Height: In, Strength -> Out
+Normal Strength: In, Strength -> Out
+Normal Blend: A, B -> Out
+Scene Color: UV -> Out
+Scene Depth: UV -> Out
+URP Sample Buffer: UV, Sampler -> Output
+## Utility
+Branch: Predicate, True, False -> Out
+Comparison: A, B -> Out
+## Outputs
+Vertex: Position, Normal, Tangent ->
+Fragment (Lit): Base Color, Normal (Tangent Space), Metallic, Smoothness, Emission, Ambient Occlusion, Alpha ->
+Fragment (Unlit): Base Color, Alpha ->
+Fragment (Fullscreen): Base Color, Alpha ->`,
+        "Blender Geometry Nodes": `## Input
+Group Input: -> Geometry
+Group Output: Geometry ->
+Position: -> Position
+Normal: -> Normal
+Index: -> Index
+ID: -> ID
+Value: -> Value
+Integer: -> Integer
+Vector: -> Vector
+RGB: -> Color
+Random Value: Min, Max, ID, Seed -> Value
+Object Info: Object, As Instance -> Location, Rotation, Scale, Geometry
+Collection Info: Collection, Separate Children, Reset Children -> Instances
+Named Attribute: Name -> Attribute, Exists
+## Geometry
+Set Position: Geometry, Selection, Position, Offset -> Geometry
+Transform Geometry: Geometry, Translation, Rotation, Scale -> Geometry
+Join Geometry: Geometry -> Geometry
+Delete Geometry: Geometry, Selection -> Geometry
+Merge by Distance: Geometry, Selection, Distance -> Geometry
+Realize Instances: Geometry, Selection -> Geometry
+Set Material: Geometry, Selection, Material -> Geometry
+Set Shade Smooth: Geometry, Selection, Shade Smooth -> Geometry
+Store Named Attribute: Geometry, Selection, Name, Value -> Geometry
+Extrude Mesh: Mesh, Selection, Offset, Offset Scale -> Mesh, Top, Side
+Subdivide Mesh: Mesh, Level -> Mesh
+Subdivision Surface: Mesh, Level -> Mesh
+Mesh to Points: Mesh, Selection, Position, Radius -> Points
+Instance on Points: Points, Selection, Instance, Pick Instance, Instance Index, Rotation, Scale -> Instances
+Distribute Points on Faces: Mesh, Selection, Distance Min, Density Max, Density, Seed -> Points, Normal, Rotation
+Curve to Mesh: Curve, Profile Curve, Scale, Fill Caps -> Mesh
+Resample Curve: Curve, Selection, Count -> Curve
+## Primitives
+Cube: Size, Vertices X, Vertices Y, Vertices Z -> Mesh
+Grid: Size X, Size Y, Vertices X, Vertices Y -> Mesh
+UV Sphere: Segments, Rings, Radius -> Mesh
+Cylinder: Vertices, Side Segments, Fill Segments, Radius, Depth -> Mesh
+Curve Circle: Resolution, Radius -> Curve
+## Utilities
+Math: Value, Value_001, Value_002 -> Value
+Vector Math: Vector, Vector_001, Vector_002, Scale -> Vector, Value
+Compare: A, B -> Result
+Mix: Factor, A, B -> Result
+Map Range: Value, From Min, From Max, To Min, To Max -> Result
+Clamp: Value, Min, Max -> Result
+Combine XYZ: X, Y, Z -> Vector
+Separate XYZ: Vector -> X, Y, Z
+Switch: Switch, False, True -> Output
+Noise Texture: Vector, W, Scale, Detail, Roughness, Lacunarity, Distortion -> Fac, Color`,
+        "Material Maker": `## Material (sources: rodzill4.github.io/material-maker/doc, github.com/RodZill4/material-maker library/base.json; ports simplified to In/Out where docs describe generically — verify against your version)
+Static PBR Material: Albedo, Metallic, Roughness, Normal, Depth, Emission -> Material
+Static PBR Material Displacement: Albedo, Metallic, Roughness, Normal, Depth, Emission, Displacement -> Material
+Dynamic PBR Material: Albedo, Metallic, Roughness, Normal, Emission -> Material
+3D Material: Albedo, Roughness, Metallic, Emission, Normal -> Material
+Raymarching Material: Albedo, Emission -> Material
+Unlit Material: Albedo, Emission -> Material
+Dynamic Sky Material: -> Material
+## Simple (generators, no inputs)
+Uniform: -> Out
+Uniform Grayscale: -> Out
+Shape: -> Out
+Image: -> Out
+Text: -> Out
+Gradient: -> Out
+Curve: -> Out
+Splines: -> Out
+Pixels: -> Out
+## Pattern
+Pattern: In -> Out
+Bricks: -> Out
+Arc Pavement: -> Out
+Uneven Bricks: -> Out
+Weave: -> Out
+Truchet: -> Out
+Scratches: -> Out
+Beehive: -> Out
+Sine Wave: -> Out
+Mesh: -> Out
+## Noise
+Noise: -> Out
+Color Noise: -> Out
+White Noise: -> Out
+Value Noise: -> Out
+Voronoi Noise: UV -> Out, Cells
+FBM: UV -> Out
+Clouds: -> Out
+Dirt: -> Out
+## Filter (single-input unless noted)
+Invert: In -> Out
+Brightness Contrast: In -> Out
+Adjust HSV: In -> Out
+Grayscale: In -> Out
+Colorize: In, Color Ramp -> Out
+Colormap: In -> Out
+Blend: Background, Foreground, Mask -> Out
+Combine: R, G, B, A -> Out
+Decompose: In -> R, G, B, A
+Normal Map: In, Strength -> Out
+Normal Blend: A, B -> Out
+Blur: In -> Out
+Directional Blur: In -> Out
+Edge Detect: In -> Out
+Sharpen: In -> Out
+Emboss: In -> Out
+Occlusion: In -> Out
+Quantize: In -> Out
+Bevel: In -> Out
+Math: A, B -> Out
+Vec3 Math: A, B -> Out
+Pixelize: In -> Out
+Denoiser: In -> Out
+Normal to Height: In -> Out
+## Transform
+Transform: In, UV -> Out
+Translate: In -> Out
+Rotate: In -> Out
+Scale: In -> Out
+Mirror: In -> Out
+Warp: In, Distortion -> Out
+Tiler: In -> Out
+Swirl: In -> Out
+## Workflow
+Create Map: In -> Out
+Mix Maps: A, B, Mask -> Out
+Apply Map: Base, Map -> Out
+Mix: A, B -> Out
+Output: Albedo, Metallic, Roughness, Normal, Emission -> Material
+## Miscellaneous
+Material: Albedo, Roughness, Metallic, Emission, Normal, Occlusion ->
+Buffer: In -> Out
+Switch: A, B -> Out
+Remote: -> Out
+Mesh Map: Mesh -> Out
+Mesh Triplanar: Mesh, UV -> Out`,
+        "Blender Shader Nodes": `## Input (docs.blender.org/manual shader_nodes)
+Texture Coordinate: -> Generated, Normal, UV, Object, Camera, Window, Reflection
+UV Map: -> UV
+Geometry: -> Position, Normal, Tangent, True Normal, Incoming, Backfacing, Pointiness, Random Per Island
+Object Info: -> Location, Color, Alpha, Object Index, Material Index, Random
+Camera Data: -> View Vector, View Z Depth, View Distance
+Fresnel: IOR -> Fac
+Layer Weight: Blend -> Fresnel, Facing
+RGB: -> Color
+Value: -> Value
+Attribute: Fac -> Color, Vector, Fac
+Tangent: Direction, Axis -> Tangent
+## Shader
+Principled BSDF: Base Color, Metallic, Roughness, IOR, Alpha, Normal, Emission Color, Emission Strength -> BSDF
+Diffuse BSDF: Color, Roughness, Normal -> BSDF
+Glossy BSDF: Color, Roughness, Normal -> BSDF
+Glass BSDF: Color, Roughness, IOR, Normal -> BSDF
+Transparent BSDF: Color -> BSDF
+Emission: Color, Strength -> Emission
+Mix Shader: Fac, Shader1, Shader2 -> Shader
+Add Shader: Shader1, Shader2 -> Shader
+Holdout: -> Holdout
+## Texture
+Image Texture: Vector -> Color, Alpha
+Noise Texture: Vector, Scale, Detail, Roughness -> Fac, Color
+Voronoi Texture: Vector, Scale -> Distance, Color, Position
+Musgrave Texture: Vector, Scale, Detail -> Fac
+Wave Texture: Vector, Scale, Distortion -> Color, Fac
+Brick Texture: Vector, Color1, Color2, Scale -> Color, Fac
+Checker Texture: Vector, Color1, Color2, Scale -> Color, Fac
+Gradient Texture: Vector -> Color, Fac
+Magic Texture: Vector, Scale, Distortion -> Color, Fac
+Environment Texture: Vector -> Color
+## Color
+Mix: Fac, Color1, Color2 -> Color
+RGB Curves: Color -> Color
+Invert: Fac, Color -> Color
+Hue Saturation Value: Hue, Saturation, Value, Color -> Color
+Gamma: Color, Gamma -> Color
+Bright Contrast: Color, Bright, Contrast -> Color
+ColorRamp: Fac -> Color, Alpha
+## Vector
+Mapping: Vector, Location, Rotation, Scale -> Vector
+Bump: Strength, Distance, Height, Normal -> Normal
+Normal Map: Strength, Color -> Normal
+Displacement: Height, Midlevel, Scale, Normal -> Displacement
+Vector Math: Vector1, Vector2 -> Vector, Value
+Vector Rotate: Vector, Center, Angle -> Vector
+Normal: Normal -> Normal, Dot
+## Converter
+Math: Value1, Value2 -> Value
+Map Range: Value, From Min, From Max, To Min, To Max -> Result
+Clamp: Value, Min, Max -> Result
+ColorRamp (ValToRGB): Fac -> Color, Alpha
+Separate RGB: Image -> R, G, B
+Combine RGB: R, G, B -> Image
+Separate XYZ: Vector -> X, Y, Z
+Combine XYZ: X, Y, Z -> Vector
+Blackbody: Temperature -> Color
+Wavelength: Wavelength -> Color
+## Output
+Material Output: Surface, Volume, Displacement ->
+Light Output: Surface ->
+World Output: Surface, Volume ->`,
+      };
+      let CUSTOM = {},
+        ACTIVE = "";
+      try {
+        CUSTOM = JSON.parse(localStorage.getItem("ngv.tpl.v1") || "{}");
+        ACTIVE = localStorage.getItem("ngv.active.v1") || "";
+      } catch (e) {}
+      const tplText = (n) => BUILTIN[n] || CUSTOM[n] || "";
+      function tplTypes(n) {
+        const m = new Map();
+        let cat = "";
+        tplText(n)
+          .split("\n")
+          .forEach((l) => {
+            l = l.trim();
+            if (!l) return;
+            if (l.startsWith("##")) {
+              cat = l.slice(2).trim();
+              return;
+            }
+            const i = l.indexOf(":");
+            if (i < 1) return;
+            const t = {
+                name: l.slice(0, i).trim(),
+                cat,
+                ins: [],
+                outs: [],
+                vals: {},
+              },
+              [a, b] = l.slice(i + 1).split("->");
+            setPorts(t, t.ins, a, 1);
+            setPorts(t, t.outs, b, 0);
+            m.set(t.name.toLowerCase(), t);
+          });
+        return m;
+      }
+      function refText() {
+        const guide = `Node Graph Viewer: single-file web app that draws node graphs from text or JSON.
+Paste the text below into the Input pane and press Draw. No build step.
+
+TEXT FORMAT:
+- Comments: lines starting with # or // are ignored. Trailing " # comment" / " // comment" also ignored.
+- Parameter: param id "Label": type = default {min: 0, max: 1}
+  types: float, int, bool, vector2, vector3, vector4, color, texture, string
+  e.g. param dmg "Damage Amount": float = 0 {min: 0, max: 1}
+       param tint "Tint Color": color = #e0204a
+- Node: id "Label" {Setting: Value}: In, In=default -> Out, Out
+  e.g. uv "Screen Position" {Mode: Default}: -> Out
+       mul "Multiply": A, B=0.5 -> Out
+       frag "Fragment": Base Color, Alpha=1 ->
+- Connection: id.Port -> id.Port (param wire can be short: id -> node.Port)
+  e.g. uv.Out -> mul.A
+       dmg -> mul.B
+       mul.Out -> frag.Base Color
+RULES:
+- id has no spaces or dots. Port names MAY contain spaces, match exactly.
+- Inputs left of ->, outputs right. Name=value sets an input default (shown until connected).
+- A node mentioned only in connections is auto-created.
+- With a template selected you may declare by type only: m1 "Multiply" or m1: Multiply.
+
+JSON FORMAT (also accepted as input, and produced by the JSON button):
+{"parameters": [{"id": "dmg", "label": "Damage", "type": "float", "value": 0, "props": {"min": 0, "max": 1}}],
+ "nodes": [{"id": "mul", "label": "Multiply", "props": {"Mode": "Default"}, "inputs": ["A", {"name": "B", "value": 0.5}], "outputs": ["Out"]}],
+ "edges": [["dmg", "mul.B"], ["mul.Out", "frag.Base Color"]]}
+- A node with only {"id", "type"} takes ports from the active template.
+`;
+        if (!ACTIVE)
+          return (
+            guide +
+            `\nNo template selected: define every node's ports explicitly as above.` +
+            `\nPick a template in the app (Unity Shader Graph, Blender Geometry Nodes, ...) to use short type declarations.` +
+            `\nAvailable templates: ${[...Object.keys(BUILTIN), ...Object.keys(CUSTOM)].join(", ") || "none built-in"}\n`
+          );
+        return (
+          `Template: ${ACTIVE}\n` +
+          guide +
+          `\nUse Type and Port names EXACTLY as listed below (## lines are categories):\n\n` +
+          tplText(ACTIVE).trim() +
+          "\n"
+        );
+      }
+      const tsel = $("#tsel"),
+        saveT = () => {
+          try {
+            localStorage.setItem("ngv.tpl.v1", JSON.stringify(CUSTOM));
+            localStorage.setItem("ngv.active.v1", ACTIVE);
+          } catch (e) {}
+        };
+      function fillSel() {
+        tsel.innerHTML =
+          '<option value="">No template</option>' +
+          [...Object.keys(BUILTIN), ...Object.keys(CUSTOM)]
+            .map(
+              (k) =>
+                `<option${k === ACTIVE ? " selected" : ""} value="${esc(k)}">${esc(k)}</option>`,
+            )
+            .join("");
+        $("#tdel").hidden = !(ACTIVE in CUSTOM);
+      }
+      tsel.onchange = () => {
+        ACTIVE = tsel.value;
+        saveT();
+        fillSel();
+        build(false);
+      };
+      $("#topen").onclick = () => $("#tfile").click();
+      $("#tfile").onchange = async (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (f) await loadFileText(f);
+        e.target.value = "";
+      };
+      $("#tref").onclick = async () => {
+        const t = refText();
+        let ok = false;
+        try {
+          await navigator.clipboard.writeText(t);
+          ok = true;
+        } catch (e) {}
+        $("#mt").textContent = ok
+          ? "Reference copied. Paste it to your agent:"
+          : "Select all and copy this reference:";
+        $("#mx").value = t;
+        $("#modal").hidden = false;
+        $("#mx").select();
+      };
+      $("#mc").onclick = () => {
+        closeModal();
+      };
+      $("#modal").addEventListener("click", (e) => {
+        if (e.target.id === "modal") closeModal();
+      });
+      addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && !$("#modal").hidden) closeModal();
+      });
+      $("#tsave").onclick = () => {
+        const nm = $("#tname").value.trim();
+        if (!nm || BUILTIN[nm]) return;
+        const seen = new Set(),
+          L = [];
+        G.nodes.forEach((n) => {
+          if (n.kind === "param" || seen.has(n.label)) return;
+          seen.add(n.label);
+          L.push(
+            `${n.label}: ${n.ins.map((p) => (n.vals[p] !== undefined ? p + "=" + n.vals[p] : p)).join(", ")} -> ${n.outs.join(", ")}`,
+          );
+        });
+        if (!L.length) return;
+        CUSTOM[nm] = L.join("\n");
+        ACTIVE = nm;
+        saveT();
+        fillSel();
+        build(false);
+      };
+      $("#tdel").onclick = () => {
+        delete CUSTOM[ACTIVE];
+        ACTIVE = "";
+        saveT();
+        fillSel();
+        build(false);
+      };
+      fillSel();
+      let saved = "";
+      try {
+        saved = localStorage.getItem(KEY) || "";
+      } catch (e) {}
+      src.value = saved || EXAMPLE;
+      build(true);
+    </script>
+  </body>
+</html>

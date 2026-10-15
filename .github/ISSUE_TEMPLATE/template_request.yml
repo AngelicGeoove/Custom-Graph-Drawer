@@ -1,0 +1,18 @@
+name: Template request
+description: Ask for a verified node template for new software
+body:
+  - type: input
+    id: software
+    attributes:
+      label: Software / version
+      placeholder: e.g. Blender 4.2 Geometry Nodes
+    validations:
+      required: true
+  - type: textarea
+    id: nodes
+    attributes:
+      label: Node list (if you have it)
+      description: Paste in template format — ## Category, then Name: Ins -> Outs
+      render: text
+    validations:
+      required: false

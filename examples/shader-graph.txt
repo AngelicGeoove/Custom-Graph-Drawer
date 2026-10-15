@@ -1,0 +1,34 @@
+# Node:        id "Label" {Setting: Value, ...}: In, In=default -> Out
+# Connection:   id.Port -> id.Port
+# Parameter:   param id "Label": type = default {min: 0, max: 1}
+#              (wire one with:  id -> node.Port)
+# Tap a node or parameter to inspect it. The JSON button exports everything as JSON
+# (nodes: id, label, props{}, inputs[name or {name,value}], outputs[]; edges: ["a.Out","b.A"]).
+
+param dmg "Damage Amount": float = 0 {min: 0, max: 1}
+param scale "Noise Scale": float = 3 {min: 0.5, max: 12}
+param tint "Tint Color": color = #e0204a
+param wind "Wind Dir": vector3 = (0, 1, 0)
+time "Time": -> Time
+mix "Lerp": A=white, B, T -> Out
+uv "Screen Position" {Mode: Default}: -> Out
+speed "Multiply": A, B=-0.05 -> Out
+off "Combine": R=0, G -> RG
+add1 "Add": A, B -> Out
+noise "Simple Noise": UV, Scale -> Out
+sub "Subtract": A, B=0.5 -> Out
+mask "Smoothstep": Edge1=0.5, Edge2=0.8, In -> Out
+frag "Fragment" {Surface: Transparent}: Base Color, Alpha=1 ->
+
+time.Time -> speed.A
+speed.Out -> off.G
+off.RG -> add1.B
+uv.Out -> add1.A
+add1.Out -> noise.UV
+noise.Out -> sub.A
+sub.Out -> mask.In
+mask.Out -> mix.T
+tint -> mix.B
+mix.Out -> frag.Base Color
+scale -> noise.Scale
+dmg -> mask.Edge2

@@ -1,0 +1,42 @@
+{
+ "parameters": [
+  {
+   "id": "dmg",
+   "label": "Damage Amount",
+   "type": "float",
+   "value": "0",
+   "props": {
+    "min": "0",
+    "max": "1"
+   }
+  }
+ ],
+ "nodes": [
+  {
+   "id": "mul",
+   "label": "Multiply",
+   "inputs": [
+    "A",
+    {
+     "name": "B",
+     "value": "0.5"
+    }
+   ],
+   "outputs": [
+    "Out"
+   ]
+  },
+  {
+   "id": "frag",
+   "label": "Fragment",
+   "inputs": [
+    "Base Color"
+   ],
+   "outputs": []
+  }
+ ],
+ "edges": [
+  ["dmg", "mul.B"],
+  ["mul.Out", "frag.Base Color"]
+ ]
+}
