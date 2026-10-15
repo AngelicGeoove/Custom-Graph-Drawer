@@ -408,6 +408,45 @@
         margin-right: 6px;
       }
     </style>
+    <link rel="describedby" href="llms.txt" />
+    <meta name="ngv-api" content="window.NodeGraph" />
+    <script type="application/json" id="ngv-manifest">
+{
+  "name": "Node Graph Viewer",
+  "api": "window.NodeGraph",
+  "docs": "llms.txt",
+  "schema": "graph.schema.json",
+  "input": "Text format or JSON. JSON must start with '{' (after trimming) to be detected.",
+  "methods": ["load(graph, options)", "validate(graph)", "getGraph()", "getText()", "getWarnings()", "templates()", "setTemplate(name)", "reference()", "fit()", "relayout()", "exportSVG()", "encode(graph)", "shareLink(graph, options)", "describe()"],
+  "loadOptions": {"template": "template name", "relayout": "default true", "persist": "default false (does not overwrite the user's saved text)", "tab": "false to keep the current tab on narrow screens"},
+  "urlForms": {
+    "#g=<base64url(deflate-raw(utf8 graph))>": "compressed, shortest",
+    "#b=<base64url(utf8 graph)>": "plain base64url, easy for any agent",
+    "#t=<encodeURIComponent(graph text)>": "easiest, longest",
+    "?src=<url>": "fetch graph from a CORS-enabled URL (e.g. raw gist)",
+    "?template=<name>": "select a node template",
+    "?embed=1": "graph only, no input pane or toolbar (for iframes)"
+  },
+  "postMessage": {
+    "request": "{type:'load'|'validate'|'getGraph'|'getText'|'getWarnings'|'templates'|'reference'|'exportSVG'|'ping', id?, graph?, options?}",
+    "response": "{ngv:true, for:<request type>, id, ...result} or {ngv:true, for, id, error}",
+    "ready": "{ngv:true, for:'ready'} is posted to the parent window when embedded"
+  },
+  "domState": "document.body.dataset.nodes / edges / warnings are updated after every draw; #warn lists warnings; body[data-ngv-ready='1'] once the API is usable"
+}
+    </script>
+    <style>
+      body[data-embed] .bar,
+      body[data-embed] #ip {
+        display: none !important;
+      }
+      body[data-embed] .main {
+        grid-template-columns: 1fr !important;
+      }
+      body[data-embed] #gp {
+        display: flex !important;
+      }
+    </style>
   </head>
   <body data-tab="input">
     <div class="app">
@@ -517,6 +556,8 @@ mix.Out -> frag.Base Color
 scale -> noise.Scale
 dmg -> mask.Edge2
 `;
+      let lastWarns = [],
+        NOSAVE = false;
       let G = { nodes: new Map(), edges: [] },
         view = { x: 30, y: 30, k: 1 },
         sel = null,
@@ -1037,9 +1078,10 @@ dmg -> mask.Edge2
       }
 
       function build(relayout) {
-        try {
-          localStorage.setItem(KEY, src.value);
-        } catch (e) {}
+        if (!NOSAVE)
+          try {
+            localStorage.setItem(KEY, src.value);
+          } catch (e) {}
         TY = tplTypes(ACTIVE);
         TYN = ACTIVE;
         const old = G.nodes,
@@ -1072,6 +1114,10 @@ dmg -> mask.Edge2
         $("#info").textContent =
           `${G.nodes.size} nodes · ${G.edges.length} connections` +
           (np ? ` · ${np} params ▴` : "");
+        lastWarns = P.warns.slice();
+        document.body.dataset.nodes = G.nodes.size;
+        document.body.dataset.edges = G.edges.length;
+        document.body.dataset.warnings = P.warns.length;
         renderParams();
         draw();
       }
@@ -1193,6 +1239,7 @@ dmg -> mask.Edge2
         $("#modal").hidden = true;
       };
       $("#draw").onclick = () => {
+        NOSAVE = false;
         build(false);
         if (innerWidth < 860) tab("graph");
       };
@@ -1216,7 +1263,7 @@ dmg -> mask.Edge2
         src.value = EXAMPLE;
         build(true);
       };
-      $("#js").onclick = () => {
+      const graphJSON = () => {
         const j = {
           nodes: [...G.nodes.values()]
             .filter((n) => n.kind !== "param")
@@ -1242,12 +1289,16 @@ dmg -> mask.Edge2
             })),
           edges: G.edges.map((e) => [e.a + "." + e.ap, e.b + "." + e.bp]),
         };
-        src.value = JSON.stringify(j, null, 1);
+        return j;
+      };
+      $("#js").onclick = () => {
+        src.value = JSON.stringify(graphJSON(), null, 1);
         build(false);
         if (innerWidth < 860) tab("input");
       };
       let tm;
       src.addEventListener("input", () => {
+        NOSAVE = false;
         clearTimeout(tm);
         tm = setTimeout(() => build(false), 450);
       });
@@ -1738,6 +1789,225 @@ JSON FORMAT (also accepted as input, and produced by the JSON button):
       } catch (e) {}
       src.value = saved || EXAMPLE;
       build(true);
+
+      // ================= Agent / automation API =================
+      // window.NodeGraph, URL loading (#g= #b= #t= ?src= ?template= ?embed=1)
+      // and a postMessage bridge. See #ngv-manifest and llms.txt.
+      (() => {
+        const NG = { version: "1.0" };
+        const summary = () => ({
+          ok: true,
+          nodes: G.nodes.size,
+          edges: G.edges.length,
+          parameters: [...G.nodes.values()].filter((n) => n.kind === "param")
+            .length,
+          warnings: lastWarns.slice(),
+          template: ACTIVE,
+        });
+        const asText = (g) =>
+          typeof g === "string" ? g : JSON.stringify(g, null, 1);
+
+        NG.templates = () => ({
+          builtin: Object.keys(BUILTIN),
+          custom: Object.keys(CUSTOM),
+          active: ACTIVE,
+        });
+        NG.setTemplate = (name) => {
+          name = name || "";
+          if (name && !(name in BUILTIN) && !(name in CUSTOM))
+            throw new Error("Unknown template: " + name);
+          ACTIVE = name; // not persisted: API calls never change saved prefs
+          fillSel();
+          return ACTIVE;
+        };
+        NG.load = (graph, o) => {
+          o = o || {};
+          if (o.template !== undefined) NG.setTemplate(o.template);
+          src.value = asText(graph);
+          if (!o.persist) NOSAVE = true;
+          build(o.relayout !== false);
+          if (o.tab !== false && innerWidth < 860) tab("graph");
+          return summary();
+        };
+        NG.validate = (graph) => {
+          TY = tplTypes(ACTIVE);
+          TYN = ACTIVE;
+          const P = parse(asText(graph));
+          return {
+            ok: P.warns.length === 0,
+            nodes: P.nodes.size,
+            edges: P.edges.length,
+            warnings: P.warns,
+          };
+        };
+        NG.getGraph = graphJSON;
+        NG.getText = () => src.value;
+        NG.getWarnings = () => lastWarns.slice();
+        NG.reference = refText;
+        NG.fit = () => (fit(), true);
+        NG.relayout = () => (build(true), summary());
+        NG.describe = () =>
+          JSON.parse($("#ngv-manifest").textContent);
+
+        // Standalone SVG (styles inlined) so agents can see/save the drawing.
+        NG.exportSVG = () => {
+          const bb = $("#vp").getBBox(),
+            pad = 24,
+            clone = svg.cloneNode(true),
+            a = svg.querySelectorAll("*"),
+            b = clone.querySelectorAll("*"),
+            P = [
+              "fill", "stroke", "stroke-width", "stroke-dasharray", "opacity",
+              "fill-opacity", "stroke-opacity", "font-family", "font-size",
+              "font-weight", "text-anchor", "dominant-baseline",
+            ];
+          for (let i = 0; i < a.length; i++) {
+            const cs = getComputedStyle(a[i]);
+            P.forEach((p) => b[i].style.setProperty(p, cs.getPropertyValue(p)));
+          }
+          const x = bb.x - pad,
+            y = bb.y - pad,
+            w = bb.width + pad * 2,
+            h = bb.height + pad * 2;
+          clone.querySelector("#vp").setAttribute("transform", "");
+          clone.removeAttribute("style");
+          clone.removeAttribute("id");
+          clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+          clone.setAttribute("viewBox", `${x} ${y} ${w} ${h}`);
+          clone.setAttribute("width", Math.ceil(w));
+          clone.setAttribute("height", Math.ceil(h));
+          const bg = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "rect",
+          );
+          bg.setAttribute("x", x);
+          bg.setAttribute("y", y);
+          bg.setAttribute("width", w);
+          bg.setAttribute("height", h);
+          bg.setAttribute("fill", getComputedStyle(document.body).backgroundColor);
+          clone.insertBefore(bg, clone.firstChild);
+          return new XMLSerializer().serializeToString(clone);
+        };
+
+        // ---- share links
+        const b64u = {
+          enc: (u8) => {
+            let t = "";
+            u8.forEach((c) => (t += String.fromCharCode(c)));
+            return btoa(t)
+              .replace(/\+/g, "-")
+              .replace(/\//g, "_")
+              .replace(/=+$/, "");
+          },
+          dec: (t) => {
+            t = t.replace(/-/g, "+").replace(/_/g, "/");
+            while (t.length % 4) t += "=";
+            return Uint8Array.from(atob(t), (c) => c.charCodeAt(0));
+          },
+        };
+        const pipe = async (u8, stream) =>
+          new Uint8Array(
+            await new Response(
+              new Blob([u8]).stream().pipeThrough(stream),
+            ).arrayBuffer(),
+          );
+        NG.encode = async (g) =>
+          b64u.enc(
+            await pipe(
+              new TextEncoder().encode(asText(g)),
+              new CompressionStream("deflate-raw"),
+            ),
+          );
+        NG.shareLink = async (g, o) => {
+          o = o || {};
+          const q = new URLSearchParams();
+          if (o.embed) q.set("embed", "1");
+          if (o.template) q.set("template", o.template);
+          const qs = q.toString();
+          return (
+            location.origin +
+            location.pathname +
+            (qs ? "?" + qs : "") +
+            "#g=" +
+            (await NG.encode(g))
+          );
+        };
+
+        const showErr = (m) => {
+          $("#warn").innerHTML = "<div><b>!</b> " + esc(m) + "</div>";
+        };
+        async function fromURL() {
+          const hp = new URLSearchParams(location.hash.replace(/^#\??/, "")),
+            q = new URLSearchParams(location.search);
+          if (q.get("embed")) {
+            document.body.dataset.embed = "1";
+            tab("graph");
+          }
+          let text = null;
+          try {
+            if (hp.get("g"))
+              text = new TextDecoder().decode(
+                await pipe(
+                  b64u.dec(hp.get("g")),
+                  new DecompressionStream("deflate-raw"),
+                ),
+              );
+            else if (hp.get("b"))
+              text = new TextDecoder().decode(b64u.dec(hp.get("b")));
+            else if (hp.get("t")) text = hp.get("t");
+            else if (q.get("src")) {
+              const r = await fetch(q.get("src"));
+              if (!r.ok) throw new Error("HTTP " + r.status);
+              text = await r.text();
+            }
+            const tpl = q.get("template");
+            if (tpl) NG.setTemplate(tpl);
+            if (text !== null) NG.load(text, { tab: !q.get("embed") ? undefined : false });
+            else if (tpl) build(false);
+          } catch (err) {
+            showErr("Could not load graph from URL: " + err.message);
+          }
+        }
+        addEventListener("hashchange", fromURL);
+
+        // ---- postMessage bridge
+        addEventListener("message", (e) => {
+          const m = e.data;
+          if (!m || typeof m !== "object" || typeof m.type !== "string") return;
+          const reply = (o) => {
+            try {
+              e.source &&
+                e.source.postMessage(
+                  { ngv: true, for: m.type, id: m.id, ...o },
+                  e.origin && e.origin !== "null" ? e.origin : "*",
+                );
+            } catch (_) {}
+          };
+          try {
+            switch (m.type) {
+              case "load": return reply(NG.load(m.graph, m.options));
+              case "validate": return reply(NG.validate(m.graph));
+              case "getGraph": return reply({ graph: NG.getGraph() });
+              case "getText": return reply({ text: NG.getText() });
+              case "getWarnings": return reply({ warnings: NG.getWarnings() });
+              case "templates": return reply(NG.templates());
+              case "reference": return reply({ text: NG.reference() });
+              case "exportSVG": return reply({ svg: NG.exportSVG() });
+              case "ping": return reply({ ready: true, version: NG.version });
+            }
+          } catch (err) {
+            reply({ error: String((err && err.message) || err) });
+          }
+        });
+
+        window.NodeGraph = NG;
+        fromURL().finally(() => {
+          document.body.dataset.ngvReady = "1";
+          dispatchEvent(new Event("ngv:ready"));
+          if (parent !== window)
+            parent.postMessage({ ngv: true, for: "ready", version: NG.version }, "*");
+        });
+      })();
     </script>
   </body>
 </html>

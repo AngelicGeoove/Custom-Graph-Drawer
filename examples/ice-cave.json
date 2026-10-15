@@ -1,0 +1,218 @@
+{
+ "parameters": [
+  {
+   "id": "seed",
+   "label": "Seed",
+   "type": "int",
+   "value": "0",
+   "props": {}
+  },
+  {
+   "id": "arena_r",
+   "label": "Arena Radius",
+   "type": "float",
+   "value": "50",
+   "props": {
+    "min": "20",
+    "max": "150"
+   }
+  },
+  {
+   "id": "tunnel_count",
+   "label": "Tunnel Count",
+   "type": "int",
+   "value": "5",
+   "props": {}
+  },
+  {
+   "id": "voxel",
+   "label": "Voxel Size",
+   "type": "float",
+   "value": "1.2",
+   "props": {}
+  }
+ ],
+ "nodes": [
+  {
+   "id": "ginput",
+   "label": "Group Input",
+   "inputs": [],
+   "outputs": [
+    "Seed",
+    "Arena Radius",
+    "Tunnel Count",
+    "Voxel Size"
+   ]
+  },
+  {
+   "id": "tunnels",
+   "label": "GN_Tunnels",
+   "props": {
+    "Section": "3: Mesh Circle > Instance on Points > Curve to Mesh"
+   },
+   "inputs": [
+    "Tunnel Count",
+    "Tunnel Length",
+    "Tunnel Radius",
+    "Seed"
+   ],
+   "outputs": [
+    "Tunnel Mesh",
+    "Axis Points"
+   ]
+  },
+  {
+   "id": "chambers",
+   "label": "GN_Chambers",
+   "props": {
+    "Section": "4: Ico Sphere dome + end chambers"
+   },
+   "inputs": [
+    "Arena Radius",
+    "Chamber Radius",
+    "Seed"
+   ],
+   "outputs": [
+    "Chamber Mesh"
+   ]
+  },
+  {
+   "id": "join1",
+   "label": "Join Geometry",
+   "inputs": [
+    "Geometry"
+   ],
+   "outputs": [
+    "Geometry"
+   ]
+  },
+  {
+   "id": "vol",
+   "label": "GN_MeshFromVolume",
+   "props": {
+    "Section": "5: Mesh to Volume > Volume to Mesh > Boolean cut > Flip Faces"
+   },
+   "inputs": [
+    "Geometry",
+    "Voxel Size"
+   ],
+   "outputs": [
+    "Cave Mesh"
+   ]
+  },
+  {
+   "id": "detail",
+   "label": "GN_SurfaceDetail",
+   "props": {
+    "Section": "6: Noise + Voronoi displace, Set Shade Smooth"
+   },
+   "inputs": [
+    "Geometry"
+   ],
+   "outputs": [
+    "Geometry"
+   ]
+  },
+  {
+   "id": "vcol",
+   "label": "GN_VertexColors",
+   "props": {
+    "Attribute": "Color"
+   },
+   "inputs": [
+    "Geometry"
+   ],
+   "outputs": [
+    "Geometry"
+   ]
+  },
+  {
+   "id": "cryset",
+   "label": "GN_CrystalSet",
+   "props": {
+    "Section": "8: 3x CrystalBuilder > Geometry to Instance"
+   },
+   "inputs": [],
+   "outputs": [
+    "Instances"
+   ]
+  },
+  {
+   "id": "scatter1",
+   "label": "GN_CrystalScatter L1 carpet",
+   "inputs": [
+    "Surface",
+    "Instances"
+   ],
+   "outputs": [
+    "Instances"
+   ]
+  },
+  {
+   "id": "scatter3",
+   "label": "GN_CrystalScatter L3 giants",
+   "inputs": [
+    "Surface",
+    "Instances"
+   ],
+   "outputs": [
+    "Instances"
+   ]
+  },
+  {
+   "id": "cover",
+   "label": "GN_CoverProps",
+   "props": {
+    "Section": "10: Proximity to Axis Points keeps lanes clear"
+   },
+   "inputs": [
+    "Cave Mesh",
+    "Axis Points"
+   ],
+   "outputs": [
+    "Instances"
+   ]
+  },
+  {
+   "id": "collision",
+   "label": "Collision mesh path",
+   "props": {
+    "Voxel": "3.0"
+   },
+   "inputs": [
+    "Geometry"
+   ],
+   "outputs": [
+    "Geometry"
+   ]
+  },
+  {
+   "id": "out",
+   "label": "Group Output",
+   "inputs": [
+    "Geometry"
+   ],
+   "outputs": []
+  }
+ ],
+ "edges": [
+  ["ginput.Seed", "tunnels.Seed"],
+  ["ginput.Tunnel Count", "tunnels.Tunnel Count"],
+  ["ginput.Arena Radius", "chambers.Arena Radius"],
+  ["ginput.Seed", "chambers.Seed"],
+  ["tunnels.Tunnel Mesh", "join1.Geometry"],
+  ["chambers.Chamber Mesh", "join1.Geometry"],
+  ["join1.Geometry", "vol.Geometry"],
+  ["ginput.Voxel Size", "vol.Voxel Size"],
+  ["vol.Cave Mesh", "detail.Geometry"],
+  ["detail.Geometry", "vcol.Geometry"],
+  ["vcol.Geometry", "scatter1.Surface"],
+  ["cryset.Instances", "scatter1.Instances"],
+  ["vcol.Geometry", "scatter3.Surface"],
+  ["cryset.Instances", "scatter3.Instances"],
+  ["vcol.Geometry", "cover.Cave Mesh"],
+  ["tunnels.Axis Points", "cover.Axis Points"],
+  ["join1.Geometry", "collision.Geometry"],
+  ["vcol.Geometry", "out.Geometry"]
+ ]
+}

@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Node Graph Viewer graph",
+  "type": "object",
+  "properties": {
+    "parameters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[^\\s.:>\"]+$"},
+          "label": {"type": "string"},
+          "type": {"type": "string", "examples": ["float", "int", "bool", "vector2", "vector3", "vector4", "color", "texture", "string"]},
+          "value": {},
+          "props": {"type": "object"},
+          "min": {"type": "number"},
+          "max": {"type": "number"}
+        }
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[^\\s.:>\"]+$"},
+          "label": {"type": "string"},
+          "type": {"type": "string", "description": "Template node type; ports come from the active template when inputs/outputs are omitted."},
+          "props": {"type": "object", "additionalProperties": {"type": ["string", "number", "boolean"]}},
+          "inputs": {
+            "type": "array",
+            "items": {"oneOf": [
+              {"type": "string"},
+              {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}, "value": {}}}
+            ]}
+          },
+          "outputs": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {"oneOf": [
+        {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2, "description": "[\"from.Port\", \"to.Port\"]; from may be a bare parameter id"},
+        {"type": "object", "required": ["from", "to"], "properties": {"from": {"type": "string"}, "to": {"type": "string"}}}
+      ]}
+    }
+  }
+}

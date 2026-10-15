@@ -1,0 +1,60 @@
+# Node Graph Viewer
+
+> Single-file web app that draws node graphs from text or JSON. Built for AI agents and humans.
+> Machine-readable API description: the <script id="ngv-manifest"> block in index.html, or window.NodeGraph.describe().
+
+## Fastest ways to show a graph
+
+1. Share link (no clicks needed). Open one of:
+   - index.html#b=<base64url(utf8 graph)>        (plain base64url; easiest to generate)
+   - index.html#g=<base64url(deflate-raw(utf8))> (compressed; use NodeGraph.shareLink(graph))
+   - index.html#t=<encodeURIComponent(graph text)>
+   - index.html?src=<url of a CORS-enabled raw .json/.txt>
+   Add ?embed=1 for a graph-only view (no input pane/toolbar) and ?template=<name> to pick a node library.
+2. JavaScript (browser-driving agents): window.NodeGraph.load(jsonOrText, {template})
+3. iframe: parent.postMessage({type:"load", id:1, graph}, "*") -> reply {ngv:true, for:"load", id:1, nodes, edges, warnings}
+4. UI: paste into textarea#src. It redraws ~0.5 s after input; button#draw forces it.
+
+## JavaScript API (window.NodeGraph)
+
+- load(graph, {template, relayout=true, persist=false, tab}) -> {ok, nodes, edges, parameters, warnings, template}
+- validate(graph) -> {ok, nodes, edges, warnings}      (parses without drawing)
+- getGraph() -> JSON object of the drawn graph (same as the JSON button)
+- getText(), getWarnings(), templates(), setTemplate(name), reference(), fit(), relayout()
+- exportSVG() -> standalone SVG string with styles inlined
+- encode(graph), shareLink(graph, {embed, template}) -> Promise<string>
+- describe() -> the manifest
+
+Loaded graphs do not overwrite the user's saved text (persist=false) until they edit or press Draw.
+
+## Verifying your own output without seeing the page
+
+After drawing, read: document.body.dataset.nodes / edges / warnings, the text of #warn, or call NodeGraph.getWarnings().
+"Parsed OK." in #warn means zero warnings. Wait for body[data-ngv-ready="1"] before calling the API.
+
+## Input format (text)
+
+    # comments start with # or //
+    param id "Label": type = default {min: 0, max: 1}        types: float int bool vector2 vector3 vector4 color texture string
+    id "Label" {Setting: Value}: In, In=default -> Out, Out
+    id.Port -> id.Port          (a parameter can be wired as:  paramId -> node.Port)
+
+- id: no spaces or dots. Port names may contain spaces and must match exactly.
+- Inputs left of ->, outputs right. Name=value sets a default shown while unconnected.
+- A node used only in connections is auto-created. With a template selected, declare by type: m1 "Multiply".
+- Each input should have at most one connection (else a warning). For multi-input sockets use numbered ports ("Geometry 1", "Geometry 2").
+
+## Input format (JSON) - must start with "{"; schema: graph.schema.json
+
+    {"parameters":[{"id":"dmg","label":"Damage","type":"float","value":0,"props":{"min":0,"max":1}}],
+     "nodes":[{"id":"mul","label":"Multiply","props":{"Mode":"Default"},"inputs":["A",{"name":"B","value":0.5}],"outputs":["Out"]},
+              {"id":"add","type":"Add"}],
+     "edges":[["dmg","mul.B"],["mul.Out","add.A"]]}
+
+- {"id","type"} only: ports come from the active template.
+- Edges are ["from.Port","to.Port"] ("from" may be just a parameter id). {from,to} objects also work.
+
+## Templates
+
+Built in: Unity Shader Graph, Blender Geometry Nodes, Blender Shader Nodes, Material Maker. NodeGraph.reference() returns the exact
+node/port names for the active template; use them verbatim.
